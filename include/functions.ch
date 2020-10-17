@@ -2,9 +2,6 @@
 #command ZAP KEYS => hb_SetKeySave(NIL)
 #command RESTORE KEYS FROM <v> => hb_SetKeySave(<v>)
 
-#define STD_BOX_STRING_LENGTH 8
-#define STD_STYLE_STRING_LENGTH 4 
-
 #define REGEXP_COLOR_PART 'C'
 #define REGEXP_BLINKING_PART 'B'
 #define REGEXP_INTENSITY_PART 'I'

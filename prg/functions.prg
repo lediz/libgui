@@ -1,226 +1,40 @@
-#include "dbstruct.ch"
 #include "error.ch"
-#include "box.ch"
 
 #include "functions.ch"
 
-#define BLINKING_PART '\*?'
-#define INTENSITY_PART '\+?'
-#define COLOR_PART '((RB)|(GR)|(BG)|([UIXWNRGB]))'
-
-PROCEDURE throw(cDescription)
-
-    LOCAL oError := ErrorNew()
-    LOCAL n := 0
-
-    oError:description := cDescription
-    oError:severity := ES_ERROR
-    oError:cargo := 'EXCEPTION: '
-
-    DO WHILE !Empty(ProcName(++n))
-        oError:cargo += hb_StrFormat('Called from %1$s(%2$d)' + hb_OsNewLine(), ProcName(n), ProcLine(n))
-    ENDDO
-
-BREAK oError //-es2 and -w3 flags makes RETURN impossible here
-
-PROCEDURE assert_type(xValue, xType, cDescription)
-
-    LOCAL nPCount := PCount()
-
-    IF nPCount < 2 .OR. nPCount > 3
-        throw(ARGUMENTS_NUMBER_EXCEPTION)
-    ENDIF
-
-    IF ValType(xType) == 'C'
-        xType := {xType}
-    ELSEIF ValType(xType) != 'A'
-        throw(ARGUMENT_VALUE_EXCEPTION)
-    ENDIF
-
-    AEval(xType, {| cElement | IF(is_data_type(cElement), , throw(ARGUMENT_VALUE_EXCEPTION))})
-
-    IF AScan(xType, ValType(xValue)) == 0
-        IF nPCount == 3
-            assert_type(cDescription, 'C')
-            throw(cDescription)
-        ELSE
-            throw(ARGUMENT_TYPE_EXCEPTION)
-        ENDIF
-    ENDIF
-
-RETURN 
-
-PROCEDURE assert_length(xValue, nLength, cDescription)
-
-    LOCAL nPCount := PCount()
-
-    IF nPCount < 2 .OR. nPCount > 3
-        throw(ARGUMENTS_NUMBER_EXCEPTION)
-    ELSEIF !(ValType(xValue) $ 'A;H;C')
-        throw(ARGUMENT_TYPE_EXCEPTION)
-    ELSEIF Len(xValue) != nLength
-        IF nPCount == 3
-            assert_type(cDescription, 'C')
-            throw(cDescription)
-        ELSE
-            throw(ARGUMENT_VALUE_EXCEPTION)
-        ENDIF
-    ENDIF
-
-RETURN
-
-PROCEDURE assert_data_type(cType, cDescription)
-
-    LOCAL nPCount := PCount()
-
-    IF nPCount < 1 .OR. nPCount > 2
-        throw(ARGUMENTS_NUMBER_EXCEPTION)
-    ELSEIF !is_data_type(cType)
-        IF nPCount == 2
-            assert_type(cDescription, 'C')
-            throw(cDescription)
-        ELSE
-            throw(ARGUMENT_VALUE_EXCEPTION)
-        ENDIF
-    ENDIF
-
-RETURN
-
-FUNCTION is_data_type(cType)
-
-    IF PCount() != 1
-        throw(ARGUMENTS_NUMBER_EXCEPTION)
-    ELSEIF ValType(cType) != 'C' .OR. Len(cType) != 1
-        RETURN .F.
-    ENDIF
-
-RETURN cType $ 'A;O;H;L;N;D;C;U;B;M;P;T;S'
-
-FUNCTION is_number_string(cVariable, lAllowSpaces)
-
-    LOCAL lWasDecimalPoint := .F.
-    LOCAL lWasMinusSign := .F.
-    LOCAL lWasDigit := .F.
-    LOCAL cDigit
-
-    IF PCount() != 2 .AND. PCount() != 1 
-        throw(ARGUMENTS_NUMBER_EXCEPTION)
-    ELSEIF PCount() == 2 .AND. ValType(lAllowSpaces) != 'L'
-        throw(ARGUMENT_TYPE_EXCEPTION)
-    ENDIF
-
-    IF hb_PIsByRef(1)
-        throw(PASS_BY_REFERENCE_EXCEPTION)
-    ENDIF
-
-    IF ValType(cVariable) != 'C'
-        RETURN .F.
-    ENDIF
-
-    IF PCount() == 2 .AND. lAllowSpaces
-        cVariable := AllTrim(cVariable)
-    ENDIF
-
-    FOR EACH cDigit IN cVariable
-        IF IsDigit(cDigit)
-            lWasDigit := .T.
-        ELSE
-            IF lWasDecimalPoint .AND. cDigit == '.'
-                RETURN .F.
-            ELSEIF lWasMinusSign .AND. cDigit == '-'
-                RETURN .F.
-            ELSEIF !lWasDecimalPoint .AND. cDigit == '.'
-                lWasDecimalPoint := .T.
-            ELSEIF !lWasMinusSign .AND. cDigit == '-'
-                IF lWasDecimalPoint .OR. lWasDigit
-                    RETURN .F.    
-                ELSE
-                    lWasMinusSign := .T.
-                ENDIF
-            ELSE
-                RETURN .F.
-            ENDIF
-        ENDIF
-    NEXT
-
-RETURN .T.
-
-FUNCTION is_date_string(cVariable, lAllowSpaces)
-
-    IF PCount() == 2
-        assert_type(lAllowSpaces, 'L')
-    ENDIF
-
-    IF ValType(cVariable) != 'C'
-        RETURN .F.
-    ENDIF
-
-    IF hb_PIsByRef(1)
-        throw(PASS_BY_REFERENCE_EXCEPTION)
-    ENDIF
-
-    IF PCount() == 2 .AND. lAllowSpaces
-        cVariable := AllTrim(cVariable)
-    ENDIF
-
-    IF !is_number_string(cVariable)
-        RETURN .F.
-    ENDIF
-
-    IF Len(cVariable) != 8
-        RETURN .F.
-    ENDIF
-
-RETURN .T.
-
-FUNCTION is_logical_string(cVariable, lAllowSpaces)
-
-    IF PCount() == 2
-        assert_type(lAllowSpaces, 'L')
-    ENDIF
-
-    IF ValType(cVariable) != 'C'
-        RETURN .F.
-    ENDIF
-
-    IF hb_PIsByRef(1)
-        throw(PASS_BY_REFERENCE_EXCEPTION)
-    ENDIF
-
-    IF PCount() == 2 .AND. lAllowSpaces
-        cVariable := AllTrim(cVariable)
-    ENDIF
-
-    IF Len(cVariable) == 3 .AND. cVariable == '.T.' .OR. cVariable == '.F.'
-        RETURN .T.
-    ELSEIF Len(cVariable) == 1 .AND. cVariable $ 'T;F;Y;N'
-        RETURN .T.
-    ENDIF
-
-RETURN .F.
+#include "setup.ch"
 
 FUNCTION max_of_array(axArray)
 
+#ifdef USE_VALIDATORS
     LOCAL cType
+#endif
     LOCAL xMax
     LOCAL nLength
     LOCAL i
 
+#ifdef USE_VALIDATORS
     assert_type(axArray, 'A')
+#endif
 
     nLength := Len(axArray)
 
     IF nLength > 0
         xMax := axArray[1]
+#ifdef USE_VALIDATORS
         cType := ValType(axArray[1])
+#endif
     ELSE
         throw(RUNTIME_EXCEPTION)
     ENDIF
 
     FOR i := 2 TO nLength
+#ifdef USE_VALIDATORS
         IF ValType(axArray[i]) != cType
             throw(RUNTIME_EXCEPTION)
         ENDIF
+#endif
+
         xMax := Max(axArray[i], xMax)
     NEXT
 
@@ -228,26 +42,35 @@ RETURN xMax
 
 FUNCTION min_of_array(axArray)
 
+#ifdef USE_VALIDATORS
     LOCAL cType
+#endif
     LOCAL xMin
     LOCAL nLength
     LOCAL i
 
+#ifdef USE_VALIDATORS 
     assert_type(axArray, 'A')
+#endif
 
     nLength := Len(axArray)
 
     IF nLength > 0
         xMin := axArray[1]
+#ifdef USE_VALIDATORS
         cType := ValType(axArray[1])
+#endif
     ELSE
         throw(RUNTIME_EXCEPTION)
     ENDIF
 
     FOR i := 2 TO nLength
+#ifdef USE_VALIDATORS
         IF ValType(axArray[i]) != cType
             throw(RUNTIME_EXCEPTION)
         ENDIF
+#endif
+
         xMin := Min(axArray[i], xMin)
     NEXT
 
@@ -256,23 +79,32 @@ RETURN xMin
 FUNCTION max_of_array_index(axArray)
 
     LOCAL nMaxInd := 1
+#ifdef USE_VALIDATORS
     LOCAL cType
+#endif
     LOCAL nLength
     LOCAL i
 
+#ifdef USE_VALIDATORS
     assert_type(axArray, 'A')
+#endif
 
     nLength := Len(axArray)
 
     IF nLength == 0
-        RETURN nLength
+        RETURN 0
     ENDIF
 
+#ifdef USE_VALIDATORS
     cType := ValType(axArray[nMaxInd])
+#endif
+
     FOR i := 2 TO nLength
+#ifdef USE_VALIDATORS
         IF ValType(axArray[i]) != cType
             throw(RUNTIME_EXCEPTION)
         ENDIF
+#endif
 
         IF axArray[i] > axArray[nMaxInd]
             nMaxInd := i
@@ -284,23 +116,32 @@ RETURN nMaxInd
 FUNCTION min_of_array_index(axArray)
 
     LOCAL nMinInd := 1
+#ifdef USE_VALIDATORS
     LOCAL cType
+#endif
     LOCAL nLength
     LOCAL i
 
+#ifdef USE_VALIDATORS 
     assert_type(axArray, 'A')
+#endif
 
     nLength := Len(axArray)
 
     IF nLength == 0
-        RETURN nLength
+        RETURN 0
     ENDIF
 
+#ifdef USE_VALIDATORS
     cType := ValType(axArray[nMinInd])
+#endif
+
     FOR i := 2 TO nLength
+#ifdef USE_VALIDATORS
         IF ValType(axArray[i]) != cType
             throw(RUNTIME_EXCEPTION)
         ENDIF
+#endif
 
         IF axArray[i] > axArray[nMinInd]
             nMinInd := i
@@ -315,17 +156,23 @@ FUNCTION length_array(axArray)
     LOCAL nLength
     LOCAL i
 
+#ifdef USE_VALIDATORS
     assert_type(axArray, 'A')
+#endif
 
     nLength := Len(axArray)
     anArrayOfLengths := Array(nLength)
 
     FOR i := 1 TO nLength
+#ifdef USE_VALIDATORS
         IF ValType(axArray[i]) $ 'C;A;H'
             anArrayOfLengths[i] := Len(axArray[i])
         ELSE
             throw(RUNTIME_EXCEPTION)
         ENDIF
+#else
+        anArrayOfLengths[i] := Len(axArray[i])
+#endif
     NEXT
 
 RETURN anArrayOfLengths
@@ -335,133 +182,35 @@ FUNCTION clone_objects_array(aoArray)
     LOCAL aoNewArray
     LOCAL i
 
+#ifdef USE_VALIDATORS
     assert_type(aoArray, 'A')
+#endif
+
     aoNewArray := Array(Len(aoArray))
 
     FOR i := 1 TO Len(aoArray)
+#ifdef USE_VALIDATORS
         IF ValType(aoArray[i]) != 'O'
             throw(RUNTIME_EXCEPTION)
         ENDIF
+#endif
         aoNewArray[i] := __objClone(aoArray[i])
     NEXT
 
 RETURN aoNewArray
-
-FUNCTION is_color(cColorString, lAllowSpaces, cPattern)
-
-    LOCAL acColors
-    LOCAL nSlash
-    LOCAL cColor
-    LOCAL pRegEx
-
-    IF PCount() != 1 .AND. PCount() != 2 .AND. PCount() != 3
-        throw(ARGUMENTS_NUMBER_EXCEPTION)
-    ENDIF
-
-    IF PCount() > 1
-        assert_type(lAllowSpaces, 'L')
-    ENDIF
-
-    IF PCount() > 2
-        assert_type(cPattern, 'C')
-        assert_length(cPattern, 3)
-    ENDIF
-
-    IF ValType(cColorString) != 'C'
-        RETURN .F.
-    ENDIF
-
-    IF hb_PIsByRef(1)
-        throw(PASS_BY_REFERENCE_EXCEPTION)
-    ENDIF
-
-    IF PCount() >= 2 .AND. lAllowSpaces
-        cColorString := AllTrim(cColorString)
-    ENDIF
-
-    IF PCount() == 3
-        pRegEx := create_color_regexp(cPattern)
-    ELSE
-        pRegEx := create_color_regexp(REGEXP_COLOR_PART + REGEXP_INTENSITY_PART + REGEXP_BLINKING_PART)
-    ENDIF
-
-    acColors := hb_ATokens(cColorString, ',')
-
-    FOR EACH cColor IN acColors
-        IF Empty(cColor)
-            LOOP
-        ENDIF
-
-        nSlash := At('/', cColor)
-
-        IF nSlash == 0
-            RETURN .F.
-        ENDIF
-
-        IF !hb_RegExLike(pRegEx, Left(cColor, nSlash - 1)) .OR. !hb_RegExLike(pRegEx, SubStr(cColor, nSlash + 1))
-            RETURN .F.
-        ENDIF
-    NEXT
-
-RETURN .T.
-
-STATIC FUNCTION create_color_regexp(cPattern)
-    
-    LOCAL nLength := Len(cPattern)
-    LOCAL cRegEx := ''
-    LOCAL cLetter
-    LOCAL i
-
-    FOR i := 1 TO nLength
-        cLetter := SubStr(cPattern, i, 1)
-        DO CASE
-            CASE cLetter == REGEXP_COLOR_PART
-                cRegEx += COLOR_PART
-            CASE cLetter == REGEXP_BLINKING_PART
-                cRegEx += BLINKING_PART
-            CASE cLetter == REGEXP_INTENSITY_PART
-                cRegEx += INTENSITY_PART
-            OTHERWISE
-                throw(ARGUMENT_VALUE_EXCEPTION)
-        ENDCASE
-    NEXT
-
-RETURN hb_RegExComp(cRegEx)
-
-FUNCTION is_box(cBoxString)
-
-    IF PCount() != 1
-        throw(ARGUMENTS_NUMBER_EXCEPTION)
-    ENDIF
-
-RETURN ValType(cBoxString) == 'C' //.AND. Len(cBoxString) == STD_BOX_STRING_LENGTH TODO Doesn't work with UTF8 and when Len(cBoxString) == 9
-
-FUNCTION is_style(cStyleString)
-
-    IF PCount() != 1
-        throw(ARGUMENTS_NUMBER_EXCEPTION)
-    ENDIF
-
-RETURN ValType(cStyleString) == 'C' .AND. Len(cStyleString) == STD_STYLE_STRING_LENGTH
-
-FUNCTION is_picture(cPicture)
-
-    IF PCount() != 1
-        throw(ARGUMENTS_NUMBER_EXCEPTION)
-    ENDIF
-
-RETURN ValType(cPicture) == 'C' .AND. is_function_picture(get_function_from_picture(cPicture)) .AND. is_template_picture(get_template_from_picture(cPicture))
 
 FUNCTION get_function_from_picture(cPicture)
 
     LOCAL cFunction := ''
     LOCAL cCharacter
 
+#ifdef USE_VALIDATORS
     IF PCount() != 1
         throw(ARGUMENTS_NUMBER_EXCEPTION)
     ENDIF
 
     assert_type(cPicture, 'C')
+#endif
 
     IF Left(cPicture, 1) == '@'
 
@@ -481,11 +230,13 @@ FUNCTION get_template_from_picture(cPicture)
     LOCAL cTemplate := ''
     LOCAL i := 1
 
+#ifdef USE_VALIDATORS
     IF PCount() != 1
         throw(ARGUMENTS_NUMBER_EXCEPTION)
     ENDIF
 
     assert_type(cPicture, 'C')
+#endif
 
     IF Empty(cPicture)
         RETURN cTemplate
@@ -503,75 +254,28 @@ FUNCTION get_template_from_picture(cPicture)
 
 RETURN cTemplate
 
-FUNCTION is_function_picture(cFunction)
-
-    LOCAL lScrolling := .F.
-    LOCAL lCheckNextIsDigit := .F.
-    LOCAL cCharacter
-
-    IF PCount() != 1
-        throw(ARGUMENTS_NUMBER_EXCEPTION)
-    ENDIF
-
-    IF ValType(cFunction) != 'C'
-        RETURN .F.
-    ENDIF
-
-    FOR EACH cCharacter IN cFunction
-
-        IF lCheckNextIsDigit
-            lCheckNextIsDigit := .F.
-            IF !isDigit(cCharacter)
-                RETURN .F.
-            ENDIF
-            CONTINUE
-        ELSEIF cCharacter == 'S'
-            lScrolling := .T.
-            lCheckNextIsDigit := .T.
-        ELSEIF lScrolling .AND. isDigit(cCharacter)
-            CONTINUE
-        ELSEIF cCharacter $ 'A;B;C;D;E;K;R;X;Z(;);!;@'
-            lScrolling := .F.
-            CONTINUE
-        ELSE
-            RETURN .F.
-        ENDIF
-    NEXT
-
-RETURN .T.
-
-FUNCTION is_template_picture(cTemplate)
-
-    LOCAL cCharacter
-
-    IF PCount() != 1
-        throw(ARGUMENTS_NUMBER_EXCEPTION)
-    ENDIF
-
-    IF ValType(cTemplate) != 'C'
-        RETURN .F.
-    ENDIF
-
-    FOR EACH cCharacter IN cTemplate
-        IF cCharacter $ 'A;N;X;9;#;L;Y;!;$;*;.;,'
-            CONTINUE
-        ELSE
-            RETURN .F.
-        ENDIF
-    NEXT
-
-RETURN .T.
-
-FUNCTION cast(xVar, cTo)
+FUNCTION cast(xVar, cTo, lAllowSpaces)
 
     LOCAL xResult := NIL
     LOCAL cType
 
-    IF PCount() != 2
+#ifdef USE_VALIDATORS
+    IF PCount() < 2 .OR. PCount() > 3
         throw(ARGUMENTS_NUMBER_EXCEPTION)
     ENDIF
+#endif
 
+    IF ValType(lAllowSpaces) == 'U'
+        lAllowSpaces := .T.
+#ifdef USE_VALIDATORS
+    ELSE
+        assert_type(lAllowSpaces, 'L')
+#endif
+    ENDIF
+
+#ifdef USE_VALIDATORS
     assert_data_type(cTo)
+#endif
 
     cType := ValType(xVar)
 
@@ -585,154 +289,156 @@ FUNCTION cast(xVar, cTo)
         RETURN NIL
     ENDIF
 
-    DO CASE
-        CASE cType == 'C'
-            DO CASE
-                CASE cTo == 'D'
-                    IF is_date_string(xVar)
+    SWITCH cType
+        CASE 'C'
+            SWITCH cTo
+                CASE 'C'
+                    RETURN xVar
+                CASE 'D'
+                    IF is_date_string(xVar, lAllowSpaces)
                         RETURN SToD(xVar)
                     ELSE
                         RETURN NIL
                     ENDIF
-                CASE cTo == 'N'
-                    IF is_number_string(xVar)
+                CASE 'N'
+                    IF is_number_string(xVar, lAllowSpaces)
                         RETURN Val(xVar)
                     ELSE
                         RETURN NIL
                     ENDIF
-                CASE cTo == 'L'
-                    IF is_logical_string(xVar)
+                CASE 'L'
+                    IF is_logical_string(xVar, lAllowSpaces)
                         RETURN IF(xVar == '.T.' .OR. xVar == 'T' .OR. xVar == 'Y', .T., .F.) 
                     ELSE
                         RETURN NIL
                     ENDIF
-                CASE cTo == 'M'
+                CASE 'M'
                     RETURN xVar
-                CASE cTo == 'U'
+                CASE 'U'
                     RETURN ''
-                CASE cTo == 'B'
+                CASE 'B'
                     RETURN NIL
-                CASE cTo == 'A'
+                CASE 'A'
                     RETURN {xVar}
-                CASE cTo == 'H'
+                CASE 'H'
                     RETURN {'' => xVar}
-            ENDCASE
-        CASE cType == 'D'
-            DO CASE
-                CASE cTo == 'C'
+            ENDSWITCH
+        CASE 'D'
+            SWITCH cTo
+                CASE 'C'
                     RETURN DToC(xVar)
-                CASE cTo == 'N'
+                CASE 'N'
                     RETURN NIL
-                CASE cTo == 'L'
+                CASE 'L'
                     RETURN NIL
-                CASE cTo == 'M'
+                CASE 'M'
                     RETURN DToS(xVar)
-                CASE cTo == 'U'
+                CASE 'U'
                     RETURN d"0000-00-00"
-                CASE cTo == 'B'
+                CASE 'B'
                     RETURN NIL
-                CASE cTo == 'A'
+                CASE 'A'
                     RETURN {xVar}
-                CASE cTo == 'H'
+                CASE 'H'
                     RETURN {'' => xVar}
-            ENDCASE
-        CASE cType == 'N'
-            DO CASE
-                CASE cTo == 'C'
+            ENDSWITCH
+        CASE 'N'
+            SWITCH cTo
+                CASE 'C'
                     RETURN Str(xVar)
-                CASE cTo == 'D'
+                CASE 'D'
                     RETURN NIL
-                CASE cTo == 'L'
+                CASE 'L'
                     IF xVar == 0
                         RETURN .F.
                     ELSE
                         RETURN .T.
                     ENDIF
-                CASE cTo == 'M'
+                CASE 'M'
                     RETURN Str(xVar)
-                CASE cTo == 'U'
+                CASE 'U'
                     RETURN 0
-                CASE cTo == 'B'
+                CASE 'B'
                     RETURN NIL
-                CASE cTo == 'A'
+                CASE 'A'
                     RETURN {xVar}
-                CASE cTo == 'H'
+                CASE 'H'
                     RETURN {'' => xVar}
-            ENDCASE
-        CASE cType == 'L'
-            DO CASE
-                CASE cTo == 'C'
+            ENDSWITCH
+        CASE 'L'
+            SWITCH cTo
+                CASE 'C'
                     RETURN Transform(xVar, 'L')
-                CASE cTo == 'D'
+                CASE 'D'
                     RETURN NIL
-                CASE cTo == 'N'
+                CASE 'N'
                     IF xVar
                         RETURN 1
                     ELSE
                         RETURN 0
                     ENDIF
-                CASE cTo == 'M'
+                CASE 'M'
                     RETURN Transform(xVar, 'Y')
-                CASE cTo == 'U'
+                CASE 'U'
                     RETURN .F.
-                CASE cTo == 'B'
+                CASE 'B'
                     RETURN NIL
-                CASE cTo == 'A'
+                CASE 'A'
                     RETURN {xVar}
-                CASE cTo == 'H'
+                CASE 'H'
                     RETURN {'' => xVar}
-            ENDCASE
-        CASE cType == 'M'
-            DO CASE
-                CASE cTo == 'C'
+            ENDSWITCH
+        CASE 'M'
+            SWITCH cTo
+                CASE 'C'
                     RETURN xVar
-                CASE cTo == 'D'
-                    IF is_date_string(xVar)
+                CASE 'D'
+                    IF is_date_string(xVar, lAllowSpaces)
                         RETURN SToD(xVar)
                     ELSE
                         RETURN NIL
                     ENDIF
-                CASE cTo == 'N'
-                    IF is_number_string(xVar)
+                CASE 'N'
+                    IF is_number_string(xVar, lAllowSpaces)
                         RETURN Val(xVar)
                     ELSE
                         RETURN NIL
                     ENDIF
-                CASE cTo == 'L'
-                    IF is_logical_string(xVar)
+                CASE 'L'
+                    IF is_logical_string(xVar, lAllowSpaces)
                         RETURN IF(xVar == '.T.' .OR. xVar == 'T' .OR. xVar == 'Y', .T., .F.) 
                     ELSE
                         RETURN NIL
                     ENDIF
-                CASE cTo == 'U'
+                CASE 'U'
                     RETURN ''
-                CASE cTo == 'B'
+                CASE 'B'
                     RETURN NIL
-                CASE cTo == 'A'
+                CASE 'A'
                     RETURN {xVar}
-                CASE cTo == 'H'
+                CASE 'H'
                     RETURN {'' => xVar}
-            ENDCASE
-        CASE cType == 'U'
-            DO CASE
-                CASE cTo == 'C'
+            ENDSWITCH
+        CASE 'U'
+            SWITCH cTo
+                CASE 'C'
                     RETURN ''
-                CASE cTo == 'D'
+                CASE 'D'
                     RETURN d"0000-00-00"
-                CASE cTo == 'N'
+                CASE 'N'
                     RETURN 0
-                CASE cTo == 'L'
+                CASE 'L'
                     RETURN .F.
-                CASE cTo == 'M'
+                CASE 'M'
                     RETURN ''
-                CASE cTo == 'B'
+                CASE 'B'
                     RETURN {|| nothing()}
-                CASE cTo == 'A'
+                CASE 'A'
                     RETURN {}
-                CASE cTo == 'H'
+                CASE 'H'
                     RETURN {=>}
-            ENDCASE
-    ENDCASE
+            ENDSWITCH
+    ENDSWITCH
 
 RETURN xResult
 
@@ -745,130 +451,18 @@ RETURN .F.
 FUNCTION nothing()
 RETURN NIL
 
-FUNCTION row_to_hash(acOmmit, hAdd, nRecNo, cAlias)
-
-    LOCAL nOldSelect := Select()
-    LOCAL nOldRecNo := RecNo()
-    LOCAL hHash := hb_Hash()
-    LOCAL axStructure
-    LOCAL cKey
-    LOCAL axRow
-
-    IF Alias(Select(nOldSelect)) == ''
-        throw(RUNTIME_EXCEPTION)
-    ELSEIF PCount() > 4
-        throw(ARGUMENTS_NUMBER_EXCEPTION)
-    ELSEIF !(ValType(acOmmit) $ 'A;U')
-        throw(ARGUMENT_TYPE_EXCEPTION)
-    ELSEIF !(ValType(hAdd) $ 'H;U')
-        throw(ARGUMENT_TYPE_EXCEPTION)
-    ELSEIF !(ValType(cAlias) $ 'C;U')
-        throw(ARGUMENT_TYPE_EXCEPTION)
-    ELSEIF !(ValType(nRecNo) $ 'N;U')
-        throw(ARGUMENT_TYPE_EXCEPTION)
-    ELSEIF ValType(acOmmit) == 'A'
-        AEval(acOmmit, {| cElement | assert_type(cElement, 'C')})
-    ELSEIF ValType(hAdd) == 'H'
-        FOR EACH cKey IN hb_hKeys(hAdd)
-            assert_type(cKey, 'C')
-            IF !(ValType(hAdd[cKey]) $ 'C;N;D;L')
-                throw(ARGUMENT_TYPE_EXCEPTION)
-            ENDIF
-        NEXT
-    ENDIF
-
-    IF ValType(cAlias) == 'C'
-        SELECT (cAlias)
-    ENDIF
-
-    IF ValType(nRecNo) == 'N'
-        GO nRecNo
-    ENDIF
-
-    axStructure := dbStruct()
-
-    IF ValType(acOmmit) == 'A'
-        FOR EACH axRow IN axStructure
-            IF AScan(acOmmit, axRow[DBS_NAME]) == 0
-                hHash[axRow[DBS_NAME]] := field->&(axRow[DBS_NAME])
-            ENDIF
-        NEXT
-    ELSE
-        FOR EACH axRow IN axStructure
-            hHash[axRow[DBS_NAME]] := field->&(axRow[DBS_NAME])
-        NEXT
-    ENDIF
-
-    IF ValType(hAdd) == 'H'
-        FOR EACH cKey IN hb_hKeys(hAdd)
-            IF hb_hHasKey(hHash, cKey)
-                throw(RUNTIME_EXCEPTION)
-            ENDIF
-
-            hHash[cKey] := hAdd[cKey]
-        NEXT
-    ENDIF
-
-    SELECT (nOldSelect)
-    GO nOldRecNo
-
-RETURN hHash
-
-FUNCTION hash_to_row(hHash, lAppendBlank, lSubset)
-
-    LOCAL axStructure := dbStruct()
-    LOCAL axField
-
-    IF PCount() != 2 .AND. PCount() != 3
-        throw(ARGUMENTS_NUMBER_EXCEPTION)
-    ELSEIF ValType(hHash) != 'H'
-        throw(ARGUMENT_TYPE_EXCEPTION)
-    ELSEIF ValType(lAppendBlank) != 'L'
-        throw(ARGUMENT_TYPE_EXCEPTION)
-    ELSEIF !(ValType(lSubset) $ 'L;U')
-        throw(ARGUMENT_TYPE_EXCEPTION)
-    ENDIF
-
-    IF ValType(lSubset) == 'U'
-        lSubset := .F.
-    ENDIF
-
-    IF !lSubset
-        FOR EACH axField IN axStructure
-            IF !hb_hHasKey(hHash, axField[DBS_NAME])
-                throw(RUNTIME_EXCEPTION)
-            ENDIF
-        NEXT
-    ENDIF
-
-    IF lAppendBlank
-        APPEND BLANK
-
-        IF NetErr()
-            RETURN .F.
-        ENDIF
-    ELSE
-        IF !RLock()
-            RETURN .F.
-        ENDIF
-    ENDIF
-
-    FOR EACH axField IN axStructure
-        field->&(axField[DBS_NAME]) := hHash[axField[DBS_NAME]]
-    NEXT
-
-RETURN .T.
-
 FUNCTION array_equals(axFirst, axSecond)
 
     LOCAL nLength
     LOCAL i
 
+#ifdef USE_VALIDATORS
     IF PCount() != 2
         throw(ARGUMENTS_NUMBER_EXCEPTION)
     ELSEIF ValType(axFirst) != 'A' .OR. ValType(axSecond) != 'A'
         throw(ARGUMENT_TYPE_EXCEPTION)
     ENDIF
+#endif
 
     nLength := Len(axFirst)
 
@@ -898,11 +492,13 @@ FUNCTION hash_equals(hFirst, hSecond)
     LOCAL axKeys
     LOCAL xKey
 
+#ifdef USE_VALIDATORS
     IF PCount() != 2
         throw(ARGUMENTS_NUMBER_EXCEPTION)
     ELSEIF ValType(hFirst) != 'H' .OR. ValType(hSecond) != 'H'
         throw(ARGUMENT_TYPE_EXCEPTION)
     ENDIF
+#endif
 
     axKeys := hb_hKeys(hFirst)
 
@@ -929,11 +525,13 @@ RETURN .T.
 
 FUNCTION objects_have_same_messages(oFirst, oSecond)
 
+#ifdef USE_VALIDATORS
     IF PCount() != 2
         throw(ARGUMENTS_NUMBER_EXCEPTION)
     ELSEIF ValType(oFirst) != 'O' .OR. ValType(oSecond) != 'O'
         throw(ARGUMENT_TYPE_EXCEPTION)
     ENDIF
+#endif
 
 RETURN array_equals(__objGetMsgList(oFirst), __objGetMsgList(oSecond))
 
@@ -942,18 +540,24 @@ FUNCTION AMerge(axTarget, axAdd, lDistinct)
     LOCAL xItem
     LOCAL nLength
 
+#ifdef USE_VALIDATORS
     assert_type(axTarget, 'A')
     assert_type(axAdd, 'A')
+#endif
 
     IF ValType(lDistinct) == 'U'
         lDistinct := .F.
+#ifdef USE_VALIDATORS
     ELSEIF ValType(lDistinct) != 'L'
         throw(ARGUMENT_TYPE_EXCEPTION)
+#endif
     ENDIF
 
+#ifdef USE_VALIDATORS
     IF PCount() > 3 .OR. PCount() < 2
         throw(ARGUMENTS_NUMBER_EXCEPTION)
     ENDIF
+#endif
 
     IF lDistinct
         FOR EACH xItem IN axAdd

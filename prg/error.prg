@@ -2,24 +2,127 @@
 
 #include "functions.ch"
 
+#include "setup.ch"
+
+PROCEDURE throw(cDescription)
+
+    LOCAL oError := ErrorNew()
+    LOCAL n := 0
+
+    oError:description := cDescription
+    oError:severity := ES_ERROR
+    oError:cargo := 'EXCEPTION: '
+
+    DO WHILE !Empty(ProcName(++n))
+        oError:cargo += hb_StrFormat('Called from %1$s(%2$d)' + hb_OsNewLine(), ProcName(n), ProcLine(n))
+    ENDDO
+
+    BREAK oError
+
+#pragma ENABLEWARNINGS = Off //-es2 and -w3 flags makes RETURN impossible without this pragma
+RETURN
+#pragma ENABLEWARNINGS = On
+
+PROCEDURE assert_type(xValue, xType, cDescription)
+
+    LOCAL nPCount := PCount()
+
+#ifdef USE_VALIDATORS
+    IF nPCount < 2 .OR. nPCount > 3
+        throw(ARGUMENTS_NUMBER_EXCEPTION)
+    ENDIF
+#endif
+
+    IF ValType(xType) == 'C'
+        xType := {xType}
+#ifdef USE_VALIDATORS
+    ELSEIF ValType(xType) != 'A'
+        throw(ARGUMENT_VALUE_EXCEPTION)
+#endif
+    ENDIF
+
+#ifdef USE_VALIDATORS
+    AEval(xType, {| cElement | IF(is_data_type(cElement), , throw(ARGUMENT_VALUE_EXCEPTION))})
+#endif
+
+    IF AScan(xType, ValType(xValue)) == 0
+        IF nPCount == 3
+            assert_type(cDescription, 'C')
+            throw(cDescription)
+        ELSE
+            throw(ARGUMENT_TYPE_EXCEPTION)
+        ENDIF
+    ENDIF
+
+RETURN
+
+PROCEDURE assert_length(xValue, nLength, cDescription)
+
+    LOCAL nPCount := PCount()
+
+#ifdef USE_VALIDATORS
+    IF nPCount < 2 .OR. nPCount > 3
+        throw(ARGUMENTS_NUMBER_EXCEPTION)
+    ELSEIF !(ValType(xValue) $ 'A;H;C')
+        throw(ARGUMENT_TYPE_EXCEPTION)
+    ELSEIF Len(xValue) != nLength
+#else
+    IF Len(xValue) != nLength
+#endif
+        IF nPCount == 3
+            assert_type(cDescription, 'C')
+            throw(cDescription)
+        ELSE
+            throw(ARGUMENT_VALUE_EXCEPTION)
+        ENDIF
+    ENDIF
+
+RETURN
+
+PROCEDURE assert_data_type(cType, cDescription)
+
+    LOCAL nPCount := PCount()
+
+#ifdef USE_VALIDATORS
+    IF nPCount < 1 .OR. nPCount > 2
+        throw(ARGUMENTS_NUMBER_EXCEPTION)
+    ELSEIF !is_data_type(cType)
+#else
+    IF !is_data_type(cType)
+#endif
+        IF nPCount == 2
+            assert_type(cDescription, 'C')
+            throw(cDescription)
+        ELSE
+            throw(ARGUMENT_VALUE_EXCEPTION)
+        ENDIF
+    ENDIF
+
+RETURN
+
 FUNCTION standard_error_handler(oError)
 
-    LOCAL cMessage := IF(ValType(oError:cargo) == 'C' .AND. 'EXCEPTION' $ oError:cargo, 'Exception: ' + oError:description, get_message(oError))
+    LOCAL cMessage := IF(ValType(oError:cargo) == 'C' .AND. 'EXCEPTION' $ oError:cargo, 'Exception: ' + oError:description, __get_message(oError))
     LOCAL cOsError := IF(Empty(oError:osCode), '', ';' + hb_StrFormat('(DOS Error %1$d)', oError:osCode))
     LOCAL n := 0
-    LOCAL xHandler
     LOCAL acStack
     LOCAL cCall
     LOCAL xKey
 
-    xHandler := handle_harbour_errors(oError)
+#ifdef HB_CLP_STRICT
+    LOCAL xHandler
+
+    xHandler := __handle_harbour_errors(oError)
 
     IF xHandler != NIL
         RETURN xHandler
     ENDIF
+#endif
 
     WSetShadow(-1)
     Alert(cMessage + cOsError)
+
+    WAClose()
 
     SET PRINTER TO log.txt
     SET PRINTER ON
@@ -90,7 +193,7 @@ FUNCTION standard_error_handler(oError)
 RETURN NIL
 
 //errsys.prg
-STATIC FUNCTION get_message(oError)
+STATIC FUNCTION __get_message(oError)
 
    LOCAL cMessage := IF(oError:severity > ES_WARNING, 'Error', 'Warning') + ' '
 
@@ -120,7 +223,8 @@ STATIC FUNCTION get_message(oError)
 RETURN cMessage
 
 //Because of a compatibility some errors are allowed
-STATIC FUNCTION handle_harbour_errors(oError)
+#ifdef HB_CLP_STRICT
+STATIC FUNCTION __handle_harbour_errors(oError)
 
     LOCAL n := 0
 
@@ -133,3 +237,4 @@ STATIC FUNCTION handle_harbour_errors(oError)
     ENDIF
 
 RETURN NIL
+#endif
